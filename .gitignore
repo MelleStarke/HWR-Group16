@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Project specific stuff
+data/monkbrill/**
+!data/monkbrill/hebrew_charset.pdf
+data/train-imgs/**
+**/pretrain/**
