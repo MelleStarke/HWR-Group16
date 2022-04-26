@@ -132,7 +132,7 @@ dmypy.json
 data/dss/monkbrill/**
 !data/dss/monkbrill/hebrew_charset.pdf
 data/dss/train-imgs/**
-!data/dss/train-imgs/
+!data/dss/train-imgs/.placeholder
 **/pretrain/**
 data/iam/**
-!data/iam/
+!data/iam/iam_lines_gt.txt
