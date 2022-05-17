@@ -136,3 +136,4 @@ data/dss/train-imgs/**
 **/pretrain/**
 data/iam/**
 !data/iam/iam_lines_gt.txt
+src/dss/trained/char/generator
