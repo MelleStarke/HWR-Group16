@@ -1,5 +1,6 @@
 from regex import D
 from util import *
+from copy import deepcopy
 
 
 ######################
@@ -188,22 +189,96 @@ class CorruptCharGen():
     return tuple([torch.stack([img[i] for img in crpt_imgs]) for i in range(len(crpt_imgs[0]))])
  
 
-class RandomCorruptor(nn.Module):
+class RandomCorrupt(nn.Module):
   
-  def __init__(self, char_gen, transforms=None):
-    super(RandomCorruptor, self).__init__()
-    self.char_gen = char_gen
+  def __init__(self, char_loader, n_chars=(1, 4), transforms=None):
+    super(RandomCorrupt, self).__init__()
+    self.transforms = self._default_transforms if transforms is None else transforms
+    self.char_list = char_loader
+    self.rand_n_chars = lambda : randint(n_chars[0], n_chars[1] + 1)
+    # self.rand_n_chars = lambda : 3
+    # self.rand_char_list = lambda : np.array(char_list)[randint(len(char_list), size=rand_n_chars())]
 
+  def gen_rand_chars(self):
+    # print(f"char list len: {len(self.char_list)}\nrand index: {randint(len(self.char_list))}\n" +\
+    #       f"size: {self.rand_n_chars()}\nchar list shape: {np.shape(self.char_list)}")
+    # return np.choose(randint(len(self.char_list), size=self.rand_n_chars()), self.char_list)
+    # return self.char_list[torch.randint(len(self.char_list), size=(self.rand_n_chars(),))]
+    # return np.random.choice(self.char_list, self.rand_n_chars, replace=True)
+    return [self.char_list[i][0] for i in randint(len(self.char_list), size=self.rand_n_chars())]
 
+  @property
+  def _default_transforms(self):
+    # total_pad = randint(200)
+    # l_pad = randint(total_pad)
+    # r_pad = total_pad - l_pad
+    return [
+      # (1.0, tt.ToPILImage()),
+      # (1.0, tt.Pad((l_pad, 0, r_pad, 0), fill=-1)),
+      (1.0, RandomPad((300, 100), fill=-1)),
+      (0.3, tt.RandomAffine(0, scale=(0.7, 1), fill=-1)),
+      (0.3, tt.RandomPerspective(p=1, distortion_scale=0.5, fill=-1)),
+      (0.3, tt.RandomAffine(0, shear=(-20, 20, -20, 20), fill=-1)),
+      (0.3, tt.RandomAffine(15, fill=-1)),
+      (0.3, tt.RandomAffine(0, translate=(0.7, 0.3), fill=-1)),
+      (None, None),
+      # (1.0, tt.ToTensor()),
+      # (1.0, tt.Normalize((0.5,), (0.5,))),
+    ]
+  
+  def forward(self, input):
+    # input_shape = just_give_me_the_goddamned_image_size(input)[-2:]
+    input_shape = np.shape(input)
+      
+    # input = deepcopy(input)
+    # input_shape = input.shape
+    self.transforms[-1] = (1.0, tt.Resize(input_shape[-2:]))
+    
+    working_imshow(input)
+    plt.show()
+    
+    for char in self.gen_rand_chars():
+      # # char = char.detach().numpy()
+      # try:
+      #   print(np.shape(char[0]))
+      # except TypeError:
+      #   print(f"somehow int: {char}\n")
+        
+      # print(len(np.shape(char[0])))
+      # print("reshaped")
+      # char = char[0][0] if len(np.shape(char[0])) > 2 else char[0]
+      # print(np.shape(char))
+      # print(np.shape(char[0]))
+      # working_imshow(char)
+      # plt.show()
+      # print(np.shape(char))
+      
+      transforms = [trans for p, trans in self.transforms if p >= np.random.rand()]
+      transformation = tt.Compose(transforms)
+      print(f"input shape: {input_shape}")
+      char = transformation(char).reshape(np.shape(input))
+      
+      input = img_subtract(input, char)
+      
+      print(f"subtracted word range: {(torch.min(input), torch.max(input))}\n subtracting char range: {(torch.min(char), torch.max(char))}")
+      working_imshow(char)
+      plt.show()
+    
+    working_imshow(input)
+    plt.show()
+    # print(torch.mean(input))
+    return input
+    
 class WordAugmenter(nn.Module):
   
-  def __init__(self, transforms=None, *args, **kwargs):
+  def __init__(self,  *args, transforms=None, **kwargs):
     super(WordAugmenter, self).__init__(*args, **kwargs)
     self.transforms = self._default_transforms if transforms is None else transforms
   
   @property
   def _default_transforms(self):
     return [
+      (0.4, RandomCorrupt(load_dataset('char', equal_shapes=False))),
       (1.0, tt.ToPILImage()),
       (0.2, tt.RandomAffine(0, scale=(0.7, 1))),
       (0.2, tt.RandomPerspective(p=1, distortion_scale=0.2)),
@@ -212,14 +287,17 @@ class WordAugmenter(nn.Module):
       (0.2, tt.RandomAffine(0, translate=(0.1, 0.3))),
       (0.2, tt.RandomAffine(0, scale=(1, 1.3))),
       (0.2, tt.ColorJitter(contrast=.5)),
-      (1.0, tt.ToTensor())
+      (1.0, tt.ToTensor()),
+      (1.0, tt.Normalize((0.5,), (0.5,))),
     ]
     
   def forward(self, input):
-    transes = [trans for p, trans in self.transforms if p >= np.random.rand()]
-    transformation = tt.Compose(transes)
+    transforms = [trans for p, trans in self.transforms if p >= np.random.rand()]
+    transformation = tt.Compose(transforms)
     
-    print(transes)
+    print(f"word augmenter transforms: {transforms}")
+    
+    print(f"to be augmented word shape: {input.shape}")
     
     return transformation(input)
 
@@ -292,10 +370,21 @@ class CorruptWordGen():
     padding = [int(((self.img_shape[1] * base_word_h / self.img_shape[0]) - base_word_w) / 2),
                int((output_img_proportion - base_word_proportion) * base_word_w / 2)]
     # print(f"padding: {padding}")
-    base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
-    base_word = VF.resize(base_word, self.img_shape)
     
-    crpt_word = WordAugmenter()(base_word)
+    transformation = tt.Compose([#tt.ToPILImage(),
+                                 tt.Pad(list(map(lambda x: max(x, 0), padding)), fill = -1),
+                                 tt.Resize(self.img_shape),
+                                #  tt.ToTensor(),
+                                #  tt.Normalize((0.5,), (0.5,))
+                                ])
+    # base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
+    # base_word = VF.resize(base_word, self.img_shape)
+    print(f"gen word shape: {base_word.shape}")
+    base_word = transformation(base_word)
+    
+    print(type(base_word))
+    
+    crpt_word = WordAugmenter().forward(base_word[0,:,:])
     
     # print(chars.shape)
     # return torch.cat(tuple(chars), dim=1).detach().numpy()

@@ -14,7 +14,6 @@ from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from math import prod
-from random import randint
 
 torch.cuda.set_device(0)
 
@@ -76,14 +75,73 @@ def load_dataset(dataset_name, equal_shapes=None, image_size=64):
                             tt.Resize(image_size),
                             tt.CenterCrop(image_size),
                             tt.ToTensor(),
-                            tt.Normalize(*stats)])
+                            # Reshape(1, '-2', '-1'),
+                            tt.Normalize(*stats),
+                           ])
   else:
     transform = tt.Compose([tt.Grayscale(num_output_channels=1),
                             tt.RandomInvert(p=1),
                             tt.ToTensor(),
-                            tt.Normalize(*stats)])
+                            # Reshape(1, '-2', '-1'),
+                            tt.Normalize(*stats),
+                           ])
 
   return ImageFolder(dataset_name, transform=transform)
+
+def img_subtract(img1, img2):
+  img1 = img1 if isinstance(img1, torch.Tensor) else tt.ToTensor()(img1)
+  img2 = img2 if isinstance(img2, torch.Tensor) else tt.ToTensor()(img2)
+  print(f"img 1 range: {(torch.min(img1), torch.max(img1))}")
+  print(f"img 2 range: {(torch.min(img2), torch.max(img2))}")
+  subtr_img = img1 - (img2 + torch.ones(img2.shape)) # img1.subtract(img2 + 1)
+  print(f"pre-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
+  subtr_img = torch.maximum(subtr_img, -torch.ones(*subtr_img.shape))
+  print(f"post-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
+  return subtr_img
+
+def randint(low, *args, **kwargs):
+  if low == 0:
+    low = 1
+  return np.random.randint(low, *args, **kwargs)
+
+def just_give_me_the_goddamned_image_size(x):
+  if callable(x):
+    x = x()
+  try:
+    if callable(x.size):
+      return x.size()
+    elif isinstance(x.size, tuple):
+      return x.size
+  
+  except:
+    return x
+
+def working_imshow(img, ax=None):
+  img_shape = np.shape(img)
+  if len(img_shape) == 2:
+    if ax is None:
+      plt.imshow(img)
+    else:
+      ax.imshow(img)
+  else:
+    if ax is None:
+      plt.imshow(img[0,:,:])
+    else:
+      ax.imshow(img[0,:,:])
+
+
+class ConsistentImageFolder(ImageFolder):
+  
+  def __getitem__(self, *args, **kwargs):
+    sample, target = super(ConsistentImageFolder, self).__getitem__(*args, **kwargs)
+    
+    if not isinstance(sample, torch.Tensor):
+      sample = tt.ToTensor()(sample)
+      
+    if len(np.shape(sample)) == 2:
+      sample = torch.reshape(sample, (1, *np.shape(sample)))
+      
+    return sample, target
 
 
 class Reshape(nn.Module):
@@ -107,9 +165,74 @@ class Reshape(nn.Module):
   def forward(self, input):
     relative_dim = lambda x: input.shape[int(x)]
     shape = tuple([prod(map(relative_dim, d.split("*"))) if isinstance(d, str) else d for d in self.shape])
-    return input.reshape(shape)
+    print(f"Reshaping tensor of shape {input.shape} to {shape}")
+    input = torch.reshape(input, shape)
+    print(f"result: {input.shape}")
+    return input
 
 
+class RandomPad(tt.Pad):
+  
+  def __init__(self, pad_args, *args, **kwargs):
+    super(RandomPad, self).__init__(0, *args, **kwargs)
+    self.pad_args = pad_args
+  
+  def forward(self, input):
+    padding = [randint(pad_arg) for pad_arg in self.pad_args]
+    
+    if len(padding) == 2:
+      for i in range(len(padding)):
+        pad = padding[i]
+        opposite_pad = randint(pad)
+        padding[i] -= opposite_pad
+        padding.append(opposite_pad)
+    
+    self.padding = tuple(padding)
+    
+    return super().forward(input)
+    
+
+# class RandomPad(tt.Pad):
+  
+#   def __init__(self, pad_args, *args, **kwargs):
+#     super(RandomPad, self).__init__(0, *args, **kwargs)
+    
+#     assert isinstance(pad_args, (int, float)) or \
+#            isinstance(pad_args, (list, tuple)) and len(pad_args) in [2,4],\
+#       "Invalid padding. Either use float or int, or a list/tuple of 2 or 4 floats or ints."
+      
+#     self.pad_args = pad_args
+    
+#   def forward(self, input):
+#     pad_args = self.pad_args
+#     if len(np.shape(input)) == 2:
+#       input = np.array(input)[None,:,:]
+#     print(np.shape(input))
+#     print(np.shape(input[0]))
+#     padding = []
+
+#     if isinstance(pad_args, (int, float)):
+#       pad_args = [pad_args] * 2
+    
+#     input_h, input_w = np.shape(input)[1:] if any(map(lambda x: isinstance(x, float), pad_args)) else [1] * 4
+      
+#     for pad_arg, dim_size in zip(pad_args, [input_w, input_h] * 2):
+#       if isinstance(pad_arg, float):
+#         pad_arg *= dim_size
+      
+#       padding.append(randint(pad_arg))
+    
+#     if len(pad_args) == 2:
+#       print(f"pad arg len is 2. Len padding is {len(padding)}")
+#       for i, pad in enumerate(padding):
+#         opposite_pad = randint(pad)
+#         padding[i] -= opposite_pad
+#         padding.append(opposite_pad)
+    
+#     self.padding = tuple(padding)
+    
+#     return super(RandomPad, self).forward(input)
+    
 # class Segmenter():
   
 #   def __init__(self, *args, **kwargs):
