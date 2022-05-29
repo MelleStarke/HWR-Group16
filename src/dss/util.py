@@ -89,15 +89,22 @@ def load_dataset(dataset_name, equal_shapes=None, image_size=64):
   return ImageFolder(dataset_name, transform=transform)
 
 def img_subtract(img1, img2):
-  img1 = img1 if isinstance(img1, torch.Tensor) else tt.ToTensor()(img1)
-  img2 = img2 if isinstance(img2, torch.Tensor) else tt.ToTensor()(img2)
-  print(f"img 1 range: {(torch.min(img1), torch.max(img1))}")
-  print(f"img 2 range: {(torch.min(img2), torch.max(img2))}")
-  subtr_img = img1 - (img2 + torch.ones(img2.shape)) # img1.subtract(img2 + 1)
-  print(f"pre-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
+  # img1 = img1 if isinstance(img1, torch.Tensor) else tt.ToTensor()(img1)
+  # img2 = img2 if isinstance(img2, torch.Tensor) else tt.ToTensor()(img2)
+  # print(f"img 1 range: {(torch.min(img1), torch.max(img1))}")
+  # print(f"img 2 range: {(torch.min(img2), torch.max(img2))}")
+  subtr_img = img1 - (img2 + 1) # img1.subtract(img2 + 1)
+  # print(f"pre-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
   subtr_img = torch.maximum(subtr_img, -torch.ones(*subtr_img.shape))
-  print(f"post-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
+  # print(f"post-range: {(torch.min(subtr_img), torch.max(subtr_img))}")
   return subtr_img
+
+def img_add(img1, img2):
+  # print(f"img 1 range: {(torch.min(img1), torch.max(img1))}")
+  # print(f"img 2 range: {(torch.min(img2), torch.max(img2))}")
+  added_img = img1 + img2 + 1
+  added_img = torch.minimum(added_img, torch.ones(*added_img.shape))
+  return added_img
 
 def randint(low, *args, **kwargs):
   if low == 0:

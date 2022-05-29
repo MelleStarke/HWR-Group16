@@ -215,12 +215,12 @@ class RandomCorrupt(nn.Module):
     return [
       # (1.0, tt.ToPILImage()),
       # (1.0, tt.Pad((l_pad, 0, r_pad, 0), fill=-1)),
+      (0.3, tt.RandomAffine(360, fill=-1)),
       (1.0, RandomPad((300, 100), fill=-1)),
       (0.3, tt.RandomAffine(0, scale=(0.7, 1), fill=-1)),
       (0.3, tt.RandomPerspective(p=1, distortion_scale=0.5, fill=-1)),
       (0.3, tt.RandomAffine(0, shear=(-20, 20, -20, 20), fill=-1)),
-      (0.3, tt.RandomAffine(15, fill=-1)),
-      (0.3, tt.RandomAffine(0, translate=(0.7, 0.3), fill=-1)),
+      (0.3, tt.RandomAffine(0, translate=(0.7, 0.4), fill=-1)),
       (None, None),
       # (1.0, tt.ToTensor()),
       # (1.0, tt.Normalize((0.5,), (0.5,))),
@@ -234,8 +234,12 @@ class RandomCorrupt(nn.Module):
     # input_shape = input.shape
     self.transforms[-1] = (1.0, tt.Resize(input_shape[-2:]))
     
-    working_imshow(input)
-    plt.show()
+    # working_imshow(input)
+    # plt.show()
+    
+    added_chars = None
+    
+    save_image(input, './generated/word/clean_word.png')
     
     for char in self.gen_rand_chars():
       # # char = char.detach().numpy()
@@ -255,17 +259,26 @@ class RandomCorrupt(nn.Module):
       
       transforms = [trans for p, trans in self.transforms if p >= np.random.rand()]
       transformation = tt.Compose(transforms)
-      print(f"input shape: {input_shape}")
+      # print(f"input shape: {input_shape}")
       char = transformation(char).reshape(np.shape(input))
       
       input = img_subtract(input, char)
       
-      print(f"subtracted word range: {(torch.min(input), torch.max(input))}\n subtracting char range: {(torch.min(char), torch.max(char))}")
-      working_imshow(char)
-      plt.show()
+      if added_chars is None:
+        added_chars = char
+      else:
+        added_chars = img_add(added_chars, char)
+      
+      # print(f"subtracted word range: {(torch.min(input), torch.max(input))}\n subtracting char range: {(torch.min(char), torch.max(char))}")
+      # working_imshow(char)
+      # plt.show()
     
-    working_imshow(input)
-    plt.show()
+    if added_chars is not None:
+      save_image(added_chars, './generated/word/added_chars.png')
+    save_image(input, './generated/word/corrupted_word.png')
+    
+    # working_imshow(input)
+    # plt.show()
     # print(torch.mean(input))
     return input
     
@@ -284,7 +297,7 @@ class WordAugmenter(nn.Module):
       (0.2, tt.RandomPerspective(p=1, distortion_scale=0.2)),
       (0.2, tt.RandomAffine(0, shear=(-10, 10, -10, 10))),
       (0.2, tt.RandomAffine(8)),
-      (0.2, tt.RandomAffine(0, translate=(0.1, 0.3))),
+      (0.2, tt.RandomAffine(0, translate=(0.1, 0.4))),
       (0.2, tt.RandomAffine(0, scale=(1, 1.3))),
       (0.2, tt.ColorJitter(contrast=.5)),
       (1.0, tt.ToTensor()),
@@ -297,7 +310,7 @@ class WordAugmenter(nn.Module):
     
     print(f"word augmenter transforms: {transforms}")
     
-    print(f"to be augmented word shape: {input.shape}")
+    # print(f"to be augmented word shape: {input.shape}")
     
     return transformation(input)
 
@@ -379,10 +392,10 @@ class CorruptWordGen():
                                 ])
     # base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
     # base_word = VF.resize(base_word, self.img_shape)
-    print(f"gen word shape: {base_word.shape}")
+    # print(f"gen word shape: {base_word.shape}")
     base_word = transformation(base_word)
     
-    print(type(base_word))
+    # print(type(base_word))
     
     crpt_word = WordAugmenter().forward(base_word[0,:,:])
     
