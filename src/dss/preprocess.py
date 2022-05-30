@@ -1,6 +1,7 @@
 from regex import D
 from util import *
 from copy import deepcopy
+from torch.utils.data import DataLoader
 
 
 ######################
@@ -145,6 +146,60 @@ class HHWordSegmenter(Segmenter):
 #####################
 ###  RESTORATION  ###
 #####################
+    
+class PrettyCorruptCharGen(DataLoader):
+  
+  def __init__(self, *args, latent_size = 64**2, n_chars=1, is_base_gen=True, **kwargs):
+    super(PrettyCorruptCharGen, self).__init(*args, **kwargs)
+    self.latent_size = latent_size
+    self.n_chars = n_chars
+    self.is_base_gen = is_base_gen
+    self.crpt_char_gen = None
+    if is_base_gen:
+      self.crpt_gen = PrettyCorruptCharGen(*args, latent_size, n_chars, is_base_gen=False)
+  
+  def __iter__(self):
+    new_iter = super(PrettyCorruptCharGen, self).__iter__()
+    self.crpt_char_gen = iter(self.crpt_char_gen)
+    return new_iter
+  
+  def __next__(self):
+    base_chars = []
+    crpt_chars = []
+    labels = []
+    
+    for _ in range(self.n_chars):
+      base_char, lab = next(self)
+      base_chars.append(base_char)
+      
+      if self.is_base_gen:
+        labels.append(lab)
+        
+        subtr_char = next(self.crpt_char_gen)[0]
+        crpt_char = img_subtract(base_char, subtr_char)
+        crpt_chars.append(crpt_char)
+    
+    if self.is_base_gen:
+      return base_chars, crpt_chars, labels
+    
+    return base_chars
+    
+    if self.n_iter > self.max_iter:
+      raise StopIteration
+    
+  def gen_chars(self, num=1):
+    old_n_chars = self.n_chars
+    self.n_chars = num
+    
+    try:
+      chars_tuple = next(self)
+      
+    except StopIteration:
+      raise RuntimeError("Iterator doesn't contain enough chars for the requested amount. Try resetting by calling __iter__() on the generator. ex: iter(gen).")
+    
+    self.n_chars = old_n_chars
+    return chars_tuple
+
     
 class CorruptCharGen():
   
