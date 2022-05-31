@@ -152,7 +152,9 @@ class PrettyCorruptCharGen(DataLoader):
   def __init__(self, *args, latent_size = 64**2, n_chars=1, is_base_gen=True, **kwargs):
     super(PrettyCorruptCharGen, self).__init(*args, **kwargs)
     self.latent_size = latent_size
-    self.n_chars = n_chars
+    
+    self.n_chars = n_chars if callable(n_chars) else lambda: n_chars
+    
     self.is_base_gen = is_base_gen
     self.crpt_char_gen = None
     if is_base_gen:
@@ -168,7 +170,7 @@ class PrettyCorruptCharGen(DataLoader):
     crpt_chars = []
     labels = []
     
-    for _ in range(self.n_chars):
+    for _ in range(self.n_chars()):
       base_char, lab = next(self)
       base_chars.append(base_char)
       
@@ -189,13 +191,9 @@ class PrettyCorruptCharGen(DataLoader):
     
   def gen_chars(self, num=1):
     old_n_chars = self.n_chars
-    self.n_chars = num
+    self.n_chars = num if callable(num) else lambda: num
     
-    try:
-      chars_tuple = next(self)
-      
-    except StopIteration:
-      raise RuntimeError("Iterator doesn't contain enough chars for the requested amount. Try resetting by calling __iter__() on the generator. ex: iter(gen).")
+    chars_tuple = next(self)
     
     self.n_chars = old_n_chars
     return chars_tuple

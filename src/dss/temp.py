@@ -1,5 +1,8 @@
-from util import *
-from preprocess import *
+import json
 
-rc = RandomCorruptor(load_dataset('char', equal_shapes=False))
-rc.forward(0)
+d = {}
+
+with open("./output_dictionary.json", "r") as file:
+  d = json.load(file)
+  
+[print(x) for x in d.items()]
