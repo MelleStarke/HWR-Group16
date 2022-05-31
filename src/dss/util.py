@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 from torch.utils.data import DataLoader
@@ -15,7 +16,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 from math import prod
 
-torch.cuda.set_device(0)
+# torch.cuda.set_device(0)
 
 DATA_DIR = "../../data/dss/"
 CHAR_DATA_DIR = DATA_DIR + "monkbrill/"
@@ -87,6 +88,16 @@ def load_dataset(dataset_name, equal_shapes=None, image_size=64):
                            ])
 
   return ImageFolder(dataset_name, transform=transform)
+
+_std_ds_label_dict = {v: k for k, v in load_dataset('char').class_to_idx.items()}
+_std_output_label_dict = {}
+with open('./output_dictionary.json') as file:
+  std_output_label_dict = json.load(file)
+
+def transcribe_label(label, ds_label_dict=_std_ds_label_dict, output_label_dict=_std_output_label_dict):
+  if isinstance(label, (list, tuple)):
+    return "".join([output_label_dict[ds_label_dict[l]] for l in label])
+  return output_label_dict[ds_label_dict[label]]
 
 def img_subtract(img1, img2):
   # img1 = img1 if isinstance(img1, torch.Tensor) else tt.ToTensor()(img1)
