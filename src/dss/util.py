@@ -91,8 +91,8 @@ def load_dataset(dataset_name, equal_shapes=None, image_size=64):
 
 _std_ds_label_dict = {v: k for k, v in load_dataset('char').class_to_idx.items()}
 _std_output_label_dict = {}
-with open('./output_dictionary.json') as file:
-  std_output_label_dict = json.load(file)
+with open('./output_dictionary.json', encoding='utf-8') as file:
+  _std_output_label_dict = json.load(file)
 
 def transcribe_label(label, ds_label_dict=_std_ds_label_dict, output_label_dict=_std_output_label_dict):
   if isinstance(label, (list, tuple)):
@@ -156,8 +156,16 @@ def equalize_heights(chars):
   return chars
 
 def glue_chars(chars, padding=0):
-  if not callable(padding) and padding == 0:
+  if not callable(padding):
+    if padding == 0:
       return torch.cat(tuple(chars), dim=2)
+    else:
+      pad_shape = (1, np.shape(chars[0])[-2], int(padding))
+      interlaced_pads = [-torch.ones(pad_shape) for _ in range(len(chars) - 1)]
+      output = [None] * (len(chars) + len(interlaced_pads))
+      output[::2] = chars
+      output[1::2] = interlaced_pads
+      return torch.cat(tuple(output), dim=2)
     
   output = chars[0]
   
@@ -231,9 +239,9 @@ class Reshape(nn.Module):
   def forward(self, input):
     relative_dim = lambda x: input.shape[int(x)]
     shape = tuple([prod(map(relative_dim, d.split("*"))) if isinstance(d, str) else d for d in self.shape])
-    print(f"Reshaping tensor of shape {input.shape} to {shape}")
+    # print(f"Reshaping tensor of shape {input.shape} to {shape}")
     input = torch.reshape(input, shape)
-    print(f"result: {input.shape}")
+    # print(f"result: {input.shape}")
     return input
 
 

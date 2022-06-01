@@ -335,6 +335,7 @@ class RandomCorrupt(nn.Module):
     # print(torch.mean(input))
     return input
     
+    
 class WordAugmenter(nn.Module):
   
   def __init__(self,  *args, transforms=None, **kwargs):
@@ -352,7 +353,7 @@ class WordAugmenter(nn.Module):
       (0.2, tt.RandomAffine(8)),
       (0.2, tt.RandomAffine(0, translate=(0.1, 0.4))),
       (0.2, tt.RandomAffine(0, scale=(1, 1.3))),
-      (0.2, tt.ColorJitter(contrast=.5)),
+      # (0.2, tt.ColorJitter(contrast=.5)),
       (1.0, tt.ToTensor()),
       (1.0, tt.Normalize((0.5,), (0.5,))),
     ]
@@ -361,13 +362,14 @@ class WordAugmenter(nn.Module):
     transforms = [trans for p, trans in self.transforms if p >= np.random.rand()]
     transformation = tt.Compose(transforms)
     
-    print(f"word augmenter transforms: {transforms}")
+    # print(f"word augmenter transforms: {transforms}")
     
     # print(f"to be augmented word shape: {input.shape}")
     
     return transformation(input)
 
-class CorruptWordGen():
+
+class OldCorruptWordGen():
   
   def __init__(self, *args, char_size=64, n_char_range=(2,10), max_iter=2048, **kwargs):
     self.dl_args = args
@@ -453,7 +455,7 @@ class CorruptWordGen():
     # crpt_word = WordAugmenter().forward(base_word[0,:,:])
     
     chars = equalize_heights(chars)
-    base_word = pad_and_resize(glue_chars(chars, 20), self.img_shape)
+    base_word = pad_and_resize(glue_chars(chars, 8), self.img_shape)
     crpt_word = pad_and_resize(glue_chars(chars, padding = lambda: np.random.uniform(-18, 6)), self.img_shape)
     crpt_word = WordAugmenter().forward(crpt_word)
     
@@ -463,3 +465,77 @@ class CorruptWordGen():
     # return word.detach().numpy()
     return base_word, crpt_word, labs
   
+  
+class CorruptWordGen():
+  
+  def __init__(self, data_loader, img_shape=64, n_char_range=(2,10), batch_size=1, base_char_pad=8, crpt_char_pad=None):
+    self.batch_size = batch_size
+    self.cat_reshape = Reshape('0', 1, '1', '2').forward
+    
+    if isinstance(img_shape, tuple):
+      self.img_shape = img_shape
+    else:
+      self.img_shape = (img_shape, int(img_shape * (n_char_range[1] + n_char_range[0]) / 3))
+      
+    self.n_char_range = n_char_range
+    self.data_loader = iter(data_loader)
+    self.empty_data_loader = False
+    
+    if crpt_char_pad is None:
+      crpt_char_pad = lambda: np.random.uniform(-12, 6)
+    self.crpt_char_pad = crpt_char_pad
+    self.base_char_pad = base_char_pad
+  
+  def __iter__(self):
+    self.data_loader = iter(self.data_loader)
+    self.empty_data_loader = False
+    return self
+  
+  def __len__(self):
+    # lb, ub = self.n_char_range
+    # return int(len(self.data_loader) * 2 / (lb + ub))
+    return 35
+  
+  def __next__(self):
+    if self.empty_data_loader:
+      raise StopIteration
+
+    base_words = []
+    crpt_words = []
+    labels = []
+
+    for _ in range(self.batch_size):
+
+      try:
+        chars = []
+        labs = []
+        for _ in range(randint(*self.n_char_range)):
+          item = next(self.data_loader)
+          chars.append(item[0][0][0])
+          labs.append(item[1].item())
+
+      except StopIteration:
+        self.empty_data_loader = True
+
+        if len(chars) == 0:
+          raise StopIteration  
+
+        break
+
+
+      chars = equalize_heights(chars)
+      base_word = pad_and_resize(glue_chars(chars, padding = self.base_char_pad), self.img_shape)
+      crpt_word = pad_and_resize(glue_chars(chars, padding = self.crpt_char_pad), self.img_shape)
+      crpt_word = WordAugmenter().forward(crpt_word)
+
+      base_words.append(base_word)
+      crpt_words.append(crpt_word)
+      labels.append(labs)
+
+    # print(chars.shape)
+    # return torch.cat(tuple(chars), dim=1).detach().numpy()
+    # return word.detach().numpy()
+    # print(labels)
+    base_words = self.cat_reshape(torch.cat(base_words))
+    crpt_words = self.cat_reshape(torch.cat(crpt_words))
+    return base_words, crpt_words, labels
