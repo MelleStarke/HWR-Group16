@@ -135,8 +135,7 @@ def just_give_me_the_goddamned_image_size(x):
     return x
 
 def working_imshow(img, ax=None):
-  img_shape = np.shape(img)
-  if len(img_shape) == 2:
+  if len(np.shape(img)) == 2:
     if ax is None:
       plt.imshow(img)
     else:
@@ -146,6 +145,55 @@ def working_imshow(img, ax=None):
       plt.imshow(img[0,:,:])
     else:
       ax.imshow(img[0,:,:])
+
+def equalize_heights(chars):
+  max_height = sorted([char.shape[0] for char in chars])[-1]
+  
+  for i in range(len(chars)):
+    char = chars[i]
+    chars[i] = VF.pad(char, [0, max_height - char.shape[0], 0, 0], fill = -1)[None, :, :]
+    
+  return chars
+
+def glue_chars(chars, padding=0):
+  if not callable(padding) and padding == 0:
+      return torch.cat(tuple(chars), dim=2)
+    
+  output = chars[0]
+  
+  for char in chars[1:]:
+    pad = padding() if callable(padding) else padding
+    char_w = np.shape(char)[-1]
+    output = VF.pad(output, (0, 0, int(pad + char_w), 0), fill = -1)
+    output_w = np.shape(output)[-1]
+    char = VF.pad(char, (output_w - char_w, 0, 0, 0), fill = -1)
+    output = img_add(output, char)
+    
+  return output
+  
+  
+def pad_and_resize(img, output_shape):
+  output_h, output_w = output_shape[-2], output_shape[-1]
+  output_proportion = output_h / output_w
+  
+  img_h, img_w = np.shape(img)[-2], np.shape(img)[-1]
+  img_proportion = img_h / img_w
+  
+  padding = [int(((output_w * img_h / output_h) - img_w) / 2),
+              int((output_proportion - img_proportion) * img_w / 2)]
+  # print(f"padding: {padding}")
+  
+  transformation = tt.Compose([#tt.ToPILImage(),
+                                tt.Pad(list(map(lambda x: max(x, 0), padding)), fill = -1),
+                                tt.Resize(output_shape),
+                              #  tt.ToTensor(),
+                              #  tt.Normalize((0.5,), (0.5,))
+                              ])
+  # base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
+  # base_word = VF.resize(base_word, self.img_shape)
+  # print(f"gen word shape: {base_word.shape}")
+  return transformation(img)
+  
 
 
 class ConsistentImageFolder(ImageFolder):

@@ -413,44 +413,50 @@ class CorruptWordGen():
   
   def gen_words(self, num=1):
     chars, labs = self.gen_chars(randint(*self.n_char_range))
-    n_chars = len(chars)
-    max_height = sorted([char.shape[0] for char in chars])[-1]
-    output_img_proportion = self.img_shape[0] / self.img_shape[1]
-    # chars[0] = F.pad(chars[0], [0, 24, 0, 0])
-    # h = chars[0].shape[0]
+    # n_chars = len(chars)
+    # max_height = sorted([char.shape[0] for char in chars])[-1]
+    # output_img_proportion = self.img_shape[0] / self.img_shape[1]
+    # # chars[0] = F.pad(chars[0], [0, 24, 0, 0])
+    # # h = chars[0].shape[0]
     
-    for i in range(n_chars):
-      char = chars[i]
-      chars[i] = VF.pad(char, [0, max_height - char.shape[0], 0, 0], fill = -1)[None, :, :]
+    # for i in range(n_chars):
+    #   char = chars[i]
+    #   chars[i] = VF.pad(char, [0, max_height - char.shape[0], 0, 0], fill = -1)[None, :, :]
     
-    # print([x.shape for x in chars])
+    # # print([x.shape for x in chars])
     
-    # base_word = VF.resize(torch.cat(tuple(chars), dim=2), size=self.img_size)[0, :, :]
-    base_word = torch.cat(tuple(chars), dim=2)
+    # # base_word = VF.resize(torch.cat(tuple(chars), dim=2), size=self.img_size)[0, :, :]
+    # base_word = torch.cat(tuple(chars), dim=2)
     
-    _, base_word_h, base_word_w = base_word.shape
-    base_word_proportion = base_word_h / base_word_w
-    y_pad = base_word_proportion < output_img_proportion
-    # padding = [int((base_word_proportion - output_img_proportion) / (2 * base_word_w)),
-    #            int((base_word_h - (base_word_h / base_word_proportion * output_img_proportion)) / 2) ]
-    padding = [int(((self.img_shape[1] * base_word_h / self.img_shape[0]) - base_word_w) / 2),
-               int((output_img_proportion - base_word_proportion) * base_word_w / 2)]
-    # print(f"padding: {padding}")
+    # _, base_word_h, base_word_w = base_word.shape
+    # base_word_proportion = base_word_h / base_word_w
+    # y_pad = base_word_proportion < output_img_proportion
+    # # padding = [int((base_word_proportion - output_img_proportion) / (2 * base_word_w)),
+    # #            int((base_word_h - (base_word_h / base_word_proportion * output_img_proportion)) / 2) ]
+    # padding = [int(((self.img_shape[1] * base_word_h / self.img_shape[0]) - base_word_w) / 2),
+    #            int((output_img_proportion - base_word_proportion) * base_word_w / 2)]
+    # # print(f"padding: {padding}")
     
-    transformation = tt.Compose([#tt.ToPILImage(),
-                                 tt.Pad(list(map(lambda x: max(x, 0), padding)), fill = -1),
-                                 tt.Resize(self.img_shape),
-                                #  tt.ToTensor(),
-                                #  tt.Normalize((0.5,), (0.5,))
-                                ])
-    # base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
-    # base_word = VF.resize(base_word, self.img_shape)
-    # print(f"gen word shape: {base_word.shape}")
-    base_word = transformation(base_word)
+    # transformation = tt.Compose([#tt.ToPILImage(),
+    #                              tt.Pad(list(map(lambda x: max(x, 0), padding)), fill = -1),
+    #                              tt.Resize(self.img_shape),
+    #                             #  tt.ToTensor(),
+    #                             #  tt.Normalize((0.5,), (0.5,))
+    #                             ])
+    # # base_word = VF.pad(base_word, list(map(lambda x: max(x, 0), padding)), fill = -1)
+    # # base_word = VF.resize(base_word, self.img_shape)
+    # # print(f"gen word shape: {base_word.shape}")
+    # base_word = transformation(base_word)
     
-    # print(type(base_word))
+    # # print(type(base_word))
     
-    crpt_word = WordAugmenter().forward(base_word[0,:,:])
+    # crpt_word = WordAugmenter().forward(base_word[0,:,:])
+    
+    chars = equalize_heights(chars)
+    base_word = pad_and_resize(glue_chars(chars, 20), self.img_shape)
+    crpt_word = pad_and_resize(glue_chars(chars, padding = lambda: np.random.uniform(-18, 6)), self.img_shape)
+    crpt_word = WordAugmenter().forward(crpt_word)
+    
     
     # print(chars.shape)
     # return torch.cat(tuple(chars), dim=1).detach().numpy()
