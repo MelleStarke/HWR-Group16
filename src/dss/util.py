@@ -55,6 +55,17 @@ def load_char_restoration_model():
   gen.load_state_dict(torch.load('./trained/char/generator'))
   return gen
 
+def copy_weights(char_model, word_model):
+  for char_param_name, char_param in char_model._modules.items():
+    d1, d2, _, _ = char_param.weight.shape
+    word_param = deepcopy(word_model._modules[char_param_name])
+    word_param.weight[:d1,:d2,:,:] = char_param.weight.clone()
+    word_model.register_parameter(char_param_name, word_param)
+    # word_model._modules[char_param_name].weight[:d1,:d2,:,:] = char_param.weight
+  
+  return word_model
+
+
 def load_dataset(dataset_name, equal_shapes=None, image_size=64):
   if any(map(lambda x: x in dataset_name.lower(), ['char', 'monk'])):
     dataset_name = CHAR_DATA_DIR
@@ -156,10 +167,12 @@ def equalize_heights(chars):
   return chars
 
 def glue_chars(chars, padding=0):
+  
   if not callable(padding):
     if padding == 0:
       return torch.cat(tuple(chars), dim=2)
-    else:
+    
+    if padding > 0:
       pad_shape = (1, np.shape(chars[0])[-2], int(padding))
       interlaced_pads = [-torch.ones(pad_shape) for _ in range(len(chars) - 1)]
       output = [None] * (len(chars) + len(interlaced_pads))

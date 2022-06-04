@@ -517,11 +517,10 @@ class CorruptWordGen():
       except StopIteration:
         self.empty_data_loader = True
 
-        if len(chars) == 0:
+        if len(base_words) == 0:
           raise StopIteration  
 
         break
-
 
       chars = equalize_heights(chars)
       base_word = pad_and_resize(glue_chars(chars, padding = self.base_char_pad), self.img_shape)
