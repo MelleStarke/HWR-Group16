@@ -55,6 +55,45 @@ def load_char_restoration_model():
   gen.load_state_dict(torch.load('./trained/char/generator'))
   return gen
 
+def load_word_restoration_model():
+  generator = nn.Sequential(
+    # in: latent_size x 1 x 1
+
+    nn.ConvTranspose2d(64 * 64 * 4, 1024, kernel_size=4, stride=1, padding=0, bias=False),
+    nn.BatchNorm2d(1024),
+    nn.ReLU(True),
+    # out: 512 x 4 x 4
+
+    nn.ConvTranspose2d(1024, 512, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(512),
+    nn.ReLU(True),
+    # out: 256 x 8 x 8
+
+    nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(256),
+    nn.ReLU(True),
+    # out: 128 x 16 x 16
+
+    nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(128),
+    nn.ReLU(True),
+    # out: 64 x 32 x 32
+    
+    nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(64),
+    nn.ReLU(True),
+    # out: 64 x 32 x 32
+
+    nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.Tanh(),
+    # out: 1 x 64 x 64
+    
+    Reshape('0', 1, '2*3')
+  )
+  generator.load_state_dict(torch.load('./trained/word/full/generator'))
+  
+  return generator
+
 def copy_weights(char_model, word_model):
   for char_param_name, char_param in char_model._modules.items():
     d1, d2, _, _ = char_param.weight.shape
@@ -192,7 +231,12 @@ def glue_chars(chars, padding=0):
     
   return output
   
+def to_norm_tensor(img):
+  return tt.Compose([tt.ToTensor(), tt.Normalize((0.5,), (0.5,))])(img)
   
+def to_pil_image(img):
+  return tt.ToPILImage()(img)  
+
 def pad_and_resize(img, output_shape):
   output_h, output_w = output_shape[-2], output_shape[-1]
   output_proportion = output_h / output_w

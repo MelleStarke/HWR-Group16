@@ -1,6 +1,4 @@
-from regex import D
 from util import *
-from copy import deepcopy
 from torch.utils.data import DataLoader
 
 
@@ -9,8 +7,12 @@ from torch.utils.data import DataLoader
 ######################
 
 class Segmenter():
-  
-  def __init__(self, *args, **kwargs):
+  """
+  Base Segmenter class.
+  All word and line segmentation classes should inherit from this to encourage extendibility.
+  Though currently serves little purpose other than sharing the postprocess function.
+  """
+  def __init__(self):
     raise NotImplementedError()
   
   def __call__(self, img):
@@ -19,66 +21,149 @@ class Segmenter():
     """
     raise NotImplementedError()
   
-  def preprocess_image(self, img):
+  def preprocess(self, img):
     return img
+  
+  def postprocess(self, units):
+    """
+    Crops all sub-images to remove the outer uninked rows and columns.
+    """
+    for i in range(len(units)):
+      unit = units[i]
+      
+      inked_rows = np.array(range(unit.shape[0]))[np.sum(unit, axis=1) > 0]
+      inked_cols = np.array(range(unit.shape[1]))[np.sum(unit, axis=0) > 0]
+      
+      row_range = inked_rows[0], inked_rows[-1] + 1
+      col_range = inked_cols[0], inked_cols[-1] + 1
+      
+      units[i] = unit[row_range[0]:row_range[1], col_range[0]:col_range[1]]
+
+    return units
 
 
 class HHLineSegmenter(Segmenter):
-  
-  def __init__(self):
+  """
+  Line segmenter using horizontal histogram projection.
+  The __call__() implementation includes the full line segmentation pipeline,
+  including pre- and postprocessing.
+  """
+  def __init__(self, pp_pad=128, pp_thresh=256, window_size=50, height_diff=20000):
+    """
+    Args:
+      pp_pad (int): Nr. of rows or columns padded to the cropped image during preprocessing.
+      
+      pp_thresh (int): In preprocessing, images are cropped from the first outermost row and column
+                       that exceeds this value. Corrects for any stray pixels before the actual text.
+                       
+      window_size (int): Nr. of bins to average the hight of the histogram over.
+      
+      height_diff (int): Difference between the current height and either the lowest height in the last
+                         valley, or highest height in the last peak, for the window to be considered to
+                         have left the peak or valley.
+    """
     self.row_hist = None
+    self.pp_pad = pp_pad
+    self.pp_thresh = pp_thresh
+    self.window_size = window_size
+    self.height_diff = height_diff
     
-  def __call__(self, img, **kwargs):
-    img = self.preprocess_image(img, **kwargs)
+  def __call__(self, img):
+    """
+    Full line segmentation function. Includes pre- and postprocessing.
+    """
+    img = self.preprocess(img)
     row_hist = self.get_row_hist(img)
-    valleys = self.find_valleys(row_hist, **kwargs)
+    valleys = self.find_valleys(row_hist)
     valleys = valleys + [len(img) - 1]
     lines = [img[t:b,:] for t, b in zip(valleys, valleys[1:])]
+    lines = self.postprocess(lines)
     return lines
 
   
-  def preprocess_image(self, img, pad=128, thresh=256):
+  def preprocess(self, img, pad=None, thresh=None):
+    """
+    Crops and pads around the binarized text.
+    
+    Args:
+    pad (int): Nr. of rows or columns padded to the cropped image during preprocessing.
+               Uses self.pp_pad if unspecified.
+    
+    thresh (int): In preprocessing, images are cropped from the first outermost row and column
+                  that exceeds this value. Corrects for any stray pixels before the actual text.
+                  Uses self.pp_thresh if unspecified.
+    """
+    pad = self.pp_pad if pad is None else pad
+    thresh = self.pp_thresh if thresh is None else thresh
+    
     row_hist = np.sum(img, axis=1)
     # Record which rows and cols have a total pixel value above the threshold.
     inked_rows = np.array(range(img.shape[0]))[row_hist > thresh]
     inked_cols = np.array(range(img.shape[1]))[np.sum(img, axis=0) > thresh]
-    # Define new img range as the first and last inked rows and cols, + padding.
-    row_range = inked_rows[0] - pad, inked_rows[-1] + pad
-    col_range = inked_cols[0] - pad, inked_cols[-1] + pad
+    # Define new img range as the first and last inked rows and cols + padding.
+    row_range = max(inked_rows[0] - pad, 0), min(inked_rows[-1] + pad, len(img))
+    col_range = max(inked_cols[0] - pad, 0), min(inked_cols[-1] + pad, len(img[0]))
     row_hist = row_hist[row_range[0]:row_range[1]]
-    # Resize image.
+    # Crop image.
     img = img[row_range[0]:row_range[1], col_range[0]:col_range[1]]
     return img
   
   def get_row_hist(self, img):
+    """
+    Sums all pixel values over the column axis.
+    """
     return np.sum(img, axis=1)
   
-  def find_valleys(self, row_hist, window_size=50, height_diff=20000):
+  def find_valleys(self, row_hist, window_size=None, height_diff=None):
+    """
+    Uses a sliding window to find the lowest part (averaged over the window_size) for every valley.
+    Initializes and being in a valley.
+    
+    Args:
+      window_size (int): Nr. of bins to average the hight of the histogram over.
+                         Uses self.window_size if unspecified.
+      
+      height_diff (int): Difference between the current height and either the lowest height in the last
+                          valley, or highest height in the last peak, for the window to be considered to
+                          have left the peak or valley. Uses self.height_diff if unspecified.
+    """
+    window_size = self.window_size if window_size is None else window_size
+    height_diff = self.height_diff if height_diff is None else height_diff
+    
+    # Init valley list
     valleys = []
+    # Init heights of the previous peak and valley
     valley_height = np.inf
-    valley_idx = 0
     peak_height = 0
+    # Index of the lowest point in the current valley
+    valley_idx = 0
+    # Whether the window is in a valley or peak (determined by height_diff)
     in_valley = True
     
+    # Slide window over rows.
     for row in range(len(row_hist) - window_size):
+      # Current averaged height.
       height = np.mean(row_hist[row : row + window_size])
-      # print(row_hist[row])
+      
+      # Determine the window to have moved from a valley into a peak.
       if in_valley and height > valley_height + height_diff:
-        # print(1)
         in_valley = False
         valley_height = np.inf
+        # Append the lowest point in the last valley to the list of valleys.
         valleys.append(valley_idx + int(window_size / 2))
       
+      # Determine the window to have moved from a peak into a valley.
       elif not in_valley and height < peak_height - height_diff:
-        # print(2)
         in_valley = True
         peak_height = 0
       
+      # Compare and save the lowest height encountered in the valley.
       if in_valley and height < valley_height:
         # print(3)
         valley_height = height
         valley_idx = row
       
+      # Compare and save the highest height encountered in the peak.
       elif not in_valley and height > peak_height:
         # print(4)
         peak_height = height
@@ -92,7 +177,7 @@ class HHWordSegmenter(Segmenter):
     pass
   
   def __call__(self, line, **kwargs):
-    seqs = self.get_seqs(line, **kwargs)
+    seqs = self.find_empty_col_seqs(line, **kwargs)
     # Column indices at which to separate the words
     word_seps = list(map(np.median, seqs))
     words = [line[:, int(l):int(r)] for l, r in zip(word_seps, word_seps[1:])]
@@ -148,8 +233,16 @@ class HHWordSegmenter(Segmenter):
 #####################
     
 class PrettyCorruptCharGen(DataLoader):
-  
-  def __init__(self, *args, latent_size = 64**2, n_chars=1, is_base_gen=True, **kwargs):
+  """
+  Prettier version of CorruptCharGen, though untested.
+  Should now actually function as an iterator that stops when the char dataset is expended, 
+  instead of after a maximum amount of iterations.
+  """
+  def __init__(self, *args, n_chars=1, is_base_gen=True, **kwargs):
+    """
+    Args:
+      latent_size (int): length of the input vector 
+    """
     super(PrettyCorruptCharGen, self).__init(*args, **kwargs)
     self.latent_size = latent_size
     

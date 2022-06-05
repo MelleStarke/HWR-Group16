@@ -137,5 +137,5 @@ data/dss/train-imgs/**
 data/iam/**
 !data/iam/iam_lines_gt.txt
 src/dss/trained/char/generator
-**/generator
-**/opt
+src/dss/segmented
+src/dss/trained/
