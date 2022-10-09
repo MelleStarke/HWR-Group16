@@ -142,13 +142,18 @@ _std_output_label_dict = {}
 with open('./output_dictionary.json', encoding='utf-8') as file:
   _std_output_label_dict = json.load(file)
 
-def transcribe_label(label, ds_label_dict=_std_ds_label_dict, output_label_dict=_std_output_label_dict):
+def transcribe_label(label, numeric=True, ds_label_dict=_std_ds_label_dict, output_label_dict=_std_output_label_dict):
   """
   Turns a numeric label into the corresponding Hebrew character, according to output_dictionary.json.
   """
   if isinstance(label, (list, tuple)):
-    return "".join([output_label_dict[ds_label_dict[l]] for l in label])
-  return output_label_dict[ds_label_dict[label]]
+    if numeric:
+      return "".join([output_label_dict[ds_label_dict[l]] for l in label])
+    return "".join([output_label_dict[l] for l in label])
+  
+  if numeric:
+    return output_label_dict[ds_label_dict[label]]
+  return output_label_dict[label]
 
 def img_subtract(img1, img2):
   """

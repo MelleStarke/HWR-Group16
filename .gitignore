@@ -139,3 +139,5 @@ data/iam/**
 src/dss/trained/char/generator
 src/dss/segmented
 src/dss/trained/
+src/dss/zip/
+src/dss/acc_score_test.ipynb

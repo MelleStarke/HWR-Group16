@@ -1,4 +1,7 @@
 import os
+from tkinter.filedialog import Directory
+import json
+import pandas as pd
 import cv2 as cv
 import numpy as np
 import util
@@ -31,17 +34,18 @@ parser.add_argument("--train-classifier", default=False, action="store_true", de
                     help="train the classifier, instead of testing it on the data.")
 
 
-# python transcribe_images.py ../../data/dss/train-imgs/ ./transcribed/ --only-binarized-imgs
+# python transcribe_images.py ../../data/dss/train-imgs/ --only-binarized-imgs
 
 args = parser.parse_args()
 input_dir = args.input_dir[0]
-output_dir = args.output_dir[0]
+output_dir = args.output_dir
 binarized_check = (lambda x: "binarized" in x) if args.only_binarized else lambda x: True
 
 cwd = os.getcwd()
 # print(os.path.join(input_dir, os.listdir(input_dir)[0]))
 # print(binarized_check(os.listdir(input_dir)[0]))
 file_names = [os.path.join(input_dir, fn) for fn in os.listdir(input_dir) if binarized_check(fn)]
+img_names = [fn.split('.')[0] for fn in os.listdir(input_dir) if binarized_check(fn)]
   
 input_imgs = [cv.threshold(cv.imread(fn, 0), 127, 255, cv.THRESH_BINARY_INV)[1] for fn in file_names]
 
@@ -52,6 +56,8 @@ input_imgs = [cv.threshold(cv.imread(fn, 0), 127, 255, cv.THRESH_BINARY_INV)[1] 
 # print(list(file_names))
 
 line_segmenter = pp.HHLineSegmenter()
+
+print("Segmenting lines...")
 
 lines = [line_segmenter(img) for img in input_imgs]
 
@@ -77,6 +83,8 @@ lines = [line_segmenter(img) for img in input_imgs]
 
 word_segmenter = pp.HHWordSegmenter()
 
+print("Segmenting words...")
+
 words = [[word_segmenter(line) for line in img_lines] for img_lines in lines]
 
 restoration_model = util.load_word_restoration_model()
@@ -87,13 +95,15 @@ try:
 except FileNotFoundError:
   pass
 
+print("Saving words...")
+
 for img_idx in range(len(words)):
   img_words = words[img_idx]
   for line_idx in range(len(img_words)):
     line_words = img_words[line_idx]
     for word_idx in range(len(line_words)):
       word = line_words[word_idx]
-      fn = f"./segmented/{file_names[img_idx].split(r'/')[-1].split(r'.')[0]}/line{line_idx}"
+      fn = f"./segmented/{img_names[img_idx]}/line{line_idx}"
       
       try:
         os.makedirs(fn)
@@ -121,6 +131,7 @@ img_folder = input_dir
 seg_folder = 'segmented'
 char_folder = './../../data/dss/monkbrill'
 
+print('Segmenting characters...')
 #Function to calculate row histograms and split the characters using it.
 def split(imgg_path):
     img = cv.imread(imgg_path, 0)
@@ -149,16 +160,21 @@ def split(imgg_path):
         
     roi2 = result[y:y+h, x+max(idx):x+w]
     cv.imwrite(imgg_path[:-4] + '_' + str(i+1) + '.jpg', roi2)
+    
+n_chars = []
 
 #Splitting the characters from the segmented words
-for dir1 in os.listdir(seg_folder):
-    if dir1 != '.DS_Store':
-        for dir2 in os.listdir(os.path.join(seg_folder, dir1)):
-            if dir2 != '.DS_Store':
-                for file in os.listdir(os.path.join(seg_folder, dir1, dir2)):
+for im_folder in os.listdir(os.path.join(seg_folder)):
+    if im_folder != '.DS_Store':
+        n_chars.append([])
+        for line_folder in os.listdir(os.path.join(seg_folder, im_folder)):
+            if line_folder != '.DS_Store':
+                n_chars[-1].append([])
+                for file in os.listdir(os.path.join(seg_folder, im_folder, line_folder)):
                     if file != '.DS_Store':
-                        image_path = os.path.join(seg_folder, dir1, dir2, file)
-                        gray = cv.imread(image_path, 0)                                 
+                        image_path = os.path.join(seg_folder, im_folder, line_folder, file)
+                        gray = cv.imread(image_path, 0)
+                        # gray = cv.bitwise_not(gray)                              
                         thresh = cv.threshold(gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)[1]    
 
                         kernel = cv.getStructuringElement(cv.MORPH_RECT, (8, 8))
@@ -170,7 +186,9 @@ for dir1 in os.listdir(seg_folder):
                         cntrs = cntrs[0] if len(cntrs) == 2 else cntrs[1]
 
                         result = gray.copy()
-
+                        
+                        n_chars[-1][-1].append(len(cntrs))
+                        
                         for c in cntrs:
                             x, y, w, h = cv.boundingRect(c)
                             cv.rectangle(result, (x, y), (x+w, y+h), (0, 0, 255), 2)
@@ -183,6 +201,18 @@ for dir1 in os.listdir(seg_folder):
                         os.remove(image_path)
                                 
                         cv.destroyAllWindows()
+# print(n_chars)
+
+for im_folder in os.listdir(seg_folder):
+    if im_folder != '.DS_Store':
+        for line_folder in os.listdir(os.path.join(seg_folder, im_folder)):
+            if line_folder != '.DS_Store':
+                for file in os.listdir(os.path.join(seg_folder, im_folder, line_folder)):
+                    if file != '.DS_Store':
+                        image_path = os.path.join(seg_folder, im_folder, line_folder, file)
+                        imm = cv.imread(image_path, 0)
+                        if imm.shape[0] < 4 or imm.shape[1] < 4:
+                            os.remove(image_path)
 
 #-------------------------------------------------------------------------------------------------#
 
@@ -304,43 +334,46 @@ if tr_te == True:
 if tr_te == False:
     model = ResNet.build(len(lb.classes_), (3, 3, 3), (64, 64, 128, 256), reg = 0.0005)
     model.load_weights('trained/classifier/classification_model.h5')
-    characs = []
+    lines, images, all_ims = [], [], []
+
+    for im_folder in os.listdir(seg_folder):
+        if im_folder != '.DS_Store':
+            for line_folder in os.listdir(os.path.join(seg_folder, im_folder)):
+                if line_folder != '.DS_Store':
+                    for file in os.listdir(os.path.join(seg_folder, im_folder, line_folder)):
+                        if file != '.DS_Store':
+                            charac = os.path.join(seg_folder, im_folder, line_folder, file)
+                            charac = cv.imread(charac, 0)
+                            charac = cv.bitwise_not(charac)
+                            charac = cv.resize(charac, (32, 32), interpolation = cv.INTER_NEAREST)
+                            charac = np.array(charac, dtype = 'float32')                                               
+                            charac = np.expand_dims(charac, axis = -1)
+                            charac = np.asarray(charac)
+                            lines.append(charac)
+                    images.append(lines)
+                    lines = []
+            all_ims.append(images)
+            images = []
     
-    for dir1 in os.listdir(seg_folder):
-        if dir1 != '.DS_Store':
-            for line in os.listdir(os.path.join(seg_folder, dir1)):
-                if line != '.DS_Store':
-                    charac = os.path.join(seg_folder, dir1, file)
-                    charac = cv.imread(charac, 0)
-                    # Try-catch for seeing why the resize doesn't work. It's cause charac is None, it cannot find an image file.
-                    try:
-                      charac = cv.resize(charac, (32, 32), interpolation = cv.INTER_NEAREST)
-                    except:
-                      print(charac)
-                      exit()
-                    charac = np.array(charac, dtype = 'float32')                                               
-                    charac = np.expand_dims(charac, axis = -1)
-                    charac = np.asarray(charac)
-                    characs.append(charac)
-            characs.append(np.ones((32, 32, 1), dtype = 'float32'))
-            characs.append(np.ones((32, 32, 1), dtype = 'float32'))
-            characs.append(np.ones((32, 32, 1), dtype = 'float32'))
+    # f = open('output_dictionary.json')
+    # chars = json.load(f, encoding='utf-16')
+    # f.close()
+    for ii, im in enumerate(all_ims):
+        line_output = []
+        for line in im:  
+            line = np.asarray(line)
+            line /= 255.0
+            if len(line) > 0:
+              preds = model.predict(line)
+              preds = lb.inverse_transform(preds)
+            else:
+              preds = []
+            word_output = [util.transcribe_label(preds[jj], numeric=False) for jj in range(len(preds))]
+            # for jj in range(len(preds)):
+            #     f.write(util.transcribe_label(preds[jj], numeric=False) + ' ')
+            # f.write('\n')
+            line_output.append(" ".join(word_output))
+        f = open( output_dir + '{}.txt'.format(img_names[ii]), 'w+', encoding='utf-16')
+        f.write("\n".join(line_output)) 
+        f.close()
 
-    characs = np.asarray(characs)
-    characs /= 255.0
-    preds = model.predict(characs)
-    preds = lb.inverse_transform(preds)
-    
-    f = open('hebrew-text.txt', 'w+')
-
-    for i in range(len(preds)):
-        f.write(preds[i] + ' ')
-
-    f.close()
-    with open('hebrew-text.txt', 'r') as file:
-        re = file.read()
-
-    re = re.replace(' Tet Tet Tet ', '\n\n')
-
-    with open('hebrew-text.txt', 'w') as file:
-        file.write(re)
